@@ -46,8 +46,8 @@ Follow these steps to run the project locally.
 
 1. **Clone the repository**
    ```bash
-   git clone <your-repo-url>
-   cd Live-Polling-System
+   git clone https://github.com/Ritesh456789/Live_Poll.git
+   cd Live_Poll
    ```
 
 2. **Install Dependencies**
