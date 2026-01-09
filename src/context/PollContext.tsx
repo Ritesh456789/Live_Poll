@@ -4,7 +4,9 @@ import React, {
   useReducer,
   useEffect,
   ReactNode,
+  useState,
 } from "react";
+import { io, Socket } from "socket.io-client";
 import {
   Poll,
   Answer,
@@ -13,10 +15,13 @@ import {
   PollResult,
   ChatMessage,
 } from "@/types/poll";
+import { useToast } from "@/components/ui/use-toast";
+
+const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 interface PollContextType {
   state: PollState;
-  createPoll: (question: string, options: string[]) => void;
+  createPoll: (question: string, options: string[], duration?: number) => void;
   submitAnswer: (
     studentId: string,
     studentName: string,
@@ -33,18 +38,18 @@ interface PollContextType {
     senderName: string,
   ) => void;
   refreshState: () => void;
+  isConnected: boolean;
 }
 
 type PollAction =
-  | { type: "CREATE_POLL"; payload: Poll }
-  | { type: "SUBMIT_ANSWER"; payload: Answer }
+  | { type: "SET_POLL"; payload: Poll | null }
+  | { type: "UPDATE_POLL"; payload: Poll }
+  | { type: "SET_RESULTS"; payload: PollResult } // Derived from poll logic
+  | { type: "ADD_MESSAGE"; payload: ChatMessage }
   | { type: "REGISTER_STUDENT"; payload: Student }
-  | { type: "UPDATE_RESULTS"; payload: PollResult }
-  | { type: "LOAD_STATE"; payload: PollState }
-  | { type: "EXPIRE_POLL" }
   | { type: "KICK_STUDENT"; payload: string }
-  | { type: "SEND_CHAT_MESSAGE"; payload: ChatMessage }
-  | { type: "REFRESH_STATE" };
+  | { type: "SET_HISTORY"; payload: Poll[] }
+  | { type: "LOAD_STATE"; payload: PollState };
 
 const initialState: PollState = {
   currentPoll: null,
@@ -56,135 +61,60 @@ const initialState: PollState = {
   kickedStudents: [],
 };
 
+// Simplified reducer for local UI state that isn't fully managed by server (like chat, local student identity)
 function pollReducer(state: PollState, action: PollAction): PollState {
   switch (action.type) {
-    case "CREATE_POLL":
-      const newState = {
-        ...state,
-        currentPoll: action.payload,
-        polls: [...state.polls, action.payload],
-        results: null,
-      };
-      localStorage.setItem("pollState", JSON.stringify(newState));
-      // Trigger storage event for cross-tab sync
-      window.dispatchEvent(new Event("poll-state-updated"));
-      return newState;
+    case "SET_POLL":
+      return { ...state, currentPoll: action.payload };
+    case "UPDATE_POLL":
+      // When poll updates, we also derive results
+      const poll = action.payload;
+      const votes = new Array(poll.options.length).fill(0);
+      const studentAnswers: Answer[] = [];
+      
+      if (poll.votes) {
+          poll.votes.forEach((v: any) => {
+             if (v.optionIndex >= 0 && v.optionIndex < votes.length) {
+                 votes[v.optionIndex]++;
+             }
+             studentAnswers.push({
+                 studentId: v.studentId,
+                 studentName: v.studentName,
+                 pollId: poll.id,
+                 optionIndex: v.optionIndex,
+                 answeredAt: new Date(v.answeredAt).getTime()
+             });
+          });
+      }
 
-    case "SUBMIT_ANSWER":
-      const updatedAnswers = [...state.answers, action.payload];
-      const updatedState = {
-        ...state,
-        answers: updatedAnswers,
-      };
-
-      // Calculate results immediately
-      if (state.currentPoll) {
-        const votes = new Array(state.currentPoll.options.length).fill(0);
-        const studentAnswers = updatedAnswers.filter(
-          (a) => a.pollId === state.currentPoll!.id,
-        );
-
-        studentAnswers.forEach((answer) => {
-          votes[answer.optionIndex]++;
-        });
-
-        updatedState.results = {
-          pollId: state.currentPoll.id,
-          question: state.currentPoll.question,
-          options: state.currentPoll.options,
+      const results: PollResult = {
+          pollId: poll.id,
+          question: poll.question,
+          options: poll.options,
           votes,
           totalVotes: studentAnswers.length,
-          studentAnswers,
-        };
-      }
+          studentAnswers
+      };
 
-      localStorage.setItem("pollState", JSON.stringify(updatedState));
-      window.dispatchEvent(new Event("poll-state-updated"));
-      return updatedState;
-
+      return { 
+          ...state, 
+          currentPoll: poll, 
+          results: results,
+          answers: studentAnswers 
+      };
+      
+    case "ADD_MESSAGE":
+      return { ...state, chatMessages: [...state.chatMessages, action.payload] };
+      
     case "REGISTER_STUDENT":
-      const stateWithStudent = {
-        ...state,
-        students: [...state.students, action.payload],
-      };
-      localStorage.setItem("pollState", JSON.stringify(stateWithStudent));
-      window.dispatchEvent(new Event("poll-state-updated"));
-      return stateWithStudent;
-
-    case "UPDATE_RESULTS":
-      const stateWithResults = {
-        ...state,
-        results: action.payload,
-      };
-      localStorage.setItem("pollState", JSON.stringify(stateWithResults));
-      return stateWithResults;
-
-    case "EXPIRE_POLL":
-      const expiredState = {
-        ...state,
-        currentPoll: state.currentPoll
-          ? { ...state.currentPoll, isActive: false }
-          : null,
-      };
-      localStorage.setItem("pollState", JSON.stringify(expiredState));
-      window.dispatchEvent(new Event("poll-state-updated"));
-      return expiredState;
+       return { ...state, students: [...state.students, action.payload] };
 
     case "KICK_STUDENT":
-      const kickedState = {
-        ...state,
-        students: state.students.map((student) =>
-          student.id === action.payload
-            ? { ...student, isKicked: true }
-            : student,
-        ),
-        kickedStudents: [...state.kickedStudents, action.payload],
-      };
-      localStorage.setItem("pollState", JSON.stringify(kickedState));
-      window.dispatchEvent(new Event("poll-state-updated"));
-      return kickedState;
+        return { ...state, kickedStudents: [...state.kickedStudents, action.payload] };
 
-    case "SEND_CHAT_MESSAGE":
-      const chatState = {
-        ...state,
-        chatMessages: [...state.chatMessages, action.payload],
-      };
-      localStorage.setItem("pollState", JSON.stringify(chatState));
-      window.dispatchEvent(new Event("poll-state-updated"));
-      return chatState;
-
-    case "LOAD_STATE":
-      return action.payload;
-
-    case "REFRESH_STATE":
-      // Force reload from localStorage
-      const savedState = localStorage.getItem("pollState");
-      if (savedState) {
-        try {
-          const parsedState = JSON.parse(savedState);
-          // Ensure all required fields exist
-          return {
-            ...initialState,
-            ...parsedState,
-            chatMessages: Array.isArray(parsedState.chatMessages)
-              ? parsedState.chatMessages
-              : [],
-            kickedStudents: Array.isArray(parsedState.kickedStudents)
-              ? parsedState.kickedStudents
-              : [],
-            students: Array.isArray(parsedState.students)
-              ? parsedState.students.map((student: any) => ({
-                  ...student,
-                  isKicked: student.isKicked || false,
-                }))
-              : [],
-          };
-        } catch (error) {
-          console.error("Error loading saved state:", error);
-        }
-      }
-      return state;
-
+    case "SET_HISTORY":
+        return { ...state, polls: action.payload };
+        
     default:
       return state;
   }
@@ -194,113 +124,70 @@ const PollContext = createContext<PollContextType | undefined>(undefined);
 
 export function PollProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(pollReducer, initialState);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const { toast } = useToast();
 
-  // Load state from localStorage on mount
+  // Initialize Socket
   useEffect(() => {
-    const savedState = localStorage.getItem("pollState");
-    if (savedState) {
-      try {
-        const parsedState = JSON.parse(savedState);
-        // Ensure all required fields exist and provide defaults for new fields
-        const completeState = {
-          ...initialState,
-          ...parsedState,
-          chatMessages: Array.isArray(parsedState.chatMessages)
-            ? parsedState.chatMessages
-            : [],
-          kickedStudents: Array.isArray(parsedState.kickedStudents)
-            ? parsedState.kickedStudents
-            : [],
-          // Ensure students have isKicked property
-          students: Array.isArray(parsedState.students)
-            ? parsedState.students.map((student: any) => ({
-                ...student,
-                isKicked: student.isKicked || false,
-              }))
-            : [],
-        };
-        dispatch({ type: "LOAD_STATE", payload: completeState });
-      } catch (error) {
-        console.error("Error loading saved state:", error);
-        // If there's an error parsing, start fresh
-        localStorage.removeItem("pollState");
-      }
-    }
-  }, []);
+    const socketInstance = io(SOCKET_URL);
+    setSocket(socketInstance);
 
-  // Listen for cross-tab state updates
-  useEffect(() => {
-    const handleStorageUpdate = () => {
-      dispatch({ type: "REFRESH_STATE" });
-    };
+    socketInstance.on("connect", () => {
+      setIsConnected(true);
+      console.log("Connected to websocket");
+    });
 
-    window.addEventListener("poll-state-updated", handleStorageUpdate);
-    window.addEventListener("storage", handleStorageUpdate);
+    socketInstance.on("disconnect", () => {
+      setIsConnected(false);
+      toast({
+          title: "Disconnected",
+          description: "Lost connection to server. Trying to reconnect...",
+          variant: "destructive"
+      });
+    });
+
+    socketInstance.on("poll_update", (poll: any) => {
+        // Transform Mongo _id to id if needed, or ensure backend sends id
+        const formattedPoll = { ...poll, id: poll._id || poll.id };
+        
+        // Handle expiration
+        if (Date.now() > formattedPoll.expiresAt) {
+             formattedPoll.isActive = false;
+        }
+
+        dispatch({ type: "UPDATE_POLL", payload: formattedPoll });
+    });
+
+    socketInstance.on("poll_ended", () => {
+        dispatch({ type: "SET_POLL", payload: null });
+    });
+
+    socketInstance.on("receive_message", (message: ChatMessage) => {
+        dispatch({ type: "ADD_MESSAGE", payload: message });
+    });
+    
+    socketInstance.on("poll_history", (history: Poll[]) => {
+        dispatch({ type: "SET_HISTORY", payload: history });
+    });
+
+    socketInstance.on("error", (err: { message: string }) => {
+        toast({
+            title: "Error",
+            description: err.message,
+            variant: "destructive"
+        });
+    });
 
     return () => {
-      window.removeEventListener("poll-state-updated", handleStorageUpdate);
-      window.removeEventListener("storage", handleStorageUpdate);
+      socketInstance.disconnect();
     };
   }, []);
 
-  // Timer for current poll
-  useEffect(() => {
-    if (state.currentPoll && state.currentPoll.isActive) {
-      const interval = setInterval(() => {
-        const now = Date.now();
-        if (now >= state.currentPoll!.expiresAt) {
-          dispatch({ type: "EXPIRE_POLL" });
-        }
-      }, 1000);
-
-      return () => clearInterval(interval);
+  const createPoll = (question: string, options: string[], duration: number = 60) => {
+    if (socket) {
+        socket.emit("create_poll", { question, options, duration });
     }
-  }, [state.currentPoll]);
-
-  // Auto-update results when poll is active
-  useEffect(() => {
-    if (
-      state.currentPoll &&
-      state.currentPoll.options &&
-      Array.isArray(state.answers) &&
-      state.answers.length > 0
-    ) {
-      const votes = new Array(state.currentPoll.options.length).fill(0);
-      const studentAnswers = state.answers.filter(
-        (a) => a.pollId === state.currentPoll!.id,
-      );
-
-      studentAnswers.forEach((answer) => {
-        if (answer.optionIndex >= 0 && answer.optionIndex < votes.length) {
-          votes[answer.optionIndex]++;
-        }
-      });
-
-      const newResults: PollResult = {
-        pollId: state.currentPoll.id,
-        question: state.currentPoll.question,
-        options: state.currentPoll.options,
-        votes,
-        totalVotes: studentAnswers.length,
-        studentAnswers,
-      };
-
-      if (JSON.stringify(newResults) !== JSON.stringify(state.results)) {
-        dispatch({ type: "UPDATE_RESULTS", payload: newResults });
-      }
-    }
-  }, [state.currentPoll, state.answers]);
-
-  const createPoll = (question: string, options: string[]) => {
-    const poll: Poll = {
-      id: Date.now().toString(),
-      question,
-      options,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + 60000, // 60 seconds
-      isActive: true,
-    };
-    dispatch({ type: "CREATE_POLL", payload: poll });
   };
 
   const submitAnswer = (
@@ -308,21 +195,25 @@ export function PollProvider({ children }: { children: ReactNode }) {
     studentName: string,
     optionIndex: number,
   ) => {
-    if (!state.currentPoll) return;
-
-    const answer: Answer = {
-      studentId,
-      studentName,
-      pollId: state.currentPoll.id,
-      optionIndex,
-      answeredAt: Date.now(),
-    };
-    dispatch({ type: "SUBMIT_ANSWER", payload: answer });
+    if (socket && state.currentPoll) {
+        socket.emit("submit_vote", { 
+            pollId: state.currentPoll.id, // Ensure this matches backend expected ID
+            studentId, 
+            studentName, 
+            optionIndex 
+        });
+    }
   };
 
   const registerStudent = (name: string): string => {
-    const studentId =
-      Date.now().toString() + Math.random().toString(36).substr(2, 9);
+    // Check if ID exists in session
+    let studentId = sessionStorage.getItem("studentId");
+    if (!studentId) {
+        studentId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        sessionStorage.setItem("studentId", studentId);
+    }
+    sessionStorage.setItem("studentName", name);
+
     const student: Student = {
       id: studentId,
       name,
@@ -330,44 +221,30 @@ export function PollProvider({ children }: { children: ReactNode }) {
       isKicked: false,
     };
     dispatch({ type: "REGISTER_STUDENT", payload: student });
-
-    // Store student ID in sessionStorage (unique per tab)
-    sessionStorage.setItem("studentId", studentId);
-    sessionStorage.setItem("studentName", name);
-
     return studentId;
   };
 
   const getStudentById = (id: string): Student | undefined => {
+    // In a real app we might fetch from server, but for now local identity is fine
+    // Or we could sync student list via socket
     return state.students.find((student) => student.id === id);
   };
 
   const canCreateNewPoll = (): boolean => {
-    if (!state.currentPoll) return true;
-    if (!state.currentPoll.isActive) return true;
-
-    // Check if all active students have answered
-    const students = Array.isArray(state.students) ? state.students : [];
-    const answers = Array.isArray(state.answers) ? state.answers : [];
-
-    const activeStudents = students.filter((s) => !s.isKicked);
-    const currentPollAnswers = answers.filter(
-      (answer) => answer.pollId === state.currentPoll!.id,
-    );
-    return (
-      currentPollAnswers.length === activeStudents.length &&
-      activeStudents.length > 0
-    );
+    // Simple check: active poll exists?
+    return !state.currentPoll || !state.currentPoll.isActive;
   };
 
   const getTimeRemaining = (): number => {
     if (!state.currentPoll || !state.currentPoll.isActive) return 0;
-    const remaining = Math.max(0, state.currentPoll.expiresAt - Date.now());
+    // Calculate based on server time (expiresAt)
+    const remaining = Math.max(0, new Date(state.currentPoll.expiresAt).getTime() - Date.now());
     return Math.ceil(remaining / 1000);
   };
 
   const kickStudent = (studentId: string) => {
-    dispatch({ type: "KICK_STUDENT", payload: studentId });
+     // Admin only feature - client side for now unless we add socket event
+     dispatch({ type: "KICK_STUDENT", payload: studentId });
   };
 
   const sendChatMessage = (
@@ -375,18 +252,20 @@ export function PollProvider({ children }: { children: ReactNode }) {
     senderType: "teacher" | "student",
     senderName: string,
   ) => {
-    const chatMessage: ChatMessage = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      message,
-      senderType,
-      senderName,
-      timestamp: Date.now(),
-    };
-    dispatch({ type: "SEND_CHAT_MESSAGE", payload: chatMessage });
+      if (socket) {
+          socket.emit("send_message", {
+              id: Date.now().toString(),
+              message,
+              senderType,
+              senderName,
+              timestamp: Date.now()
+          });
+      }
   };
 
   const refreshState = () => {
-    dispatch({ type: "REFRESH_STATE" });
+     // No-op or fetch history
+     if(socket) socket.emit("get_history");
   };
 
   return (
@@ -402,6 +281,7 @@ export function PollProvider({ children }: { children: ReactNode }) {
         kickStudent,
         sendChatMessage,
         refreshState,
+        isConnected
       }}
     >
       {children}

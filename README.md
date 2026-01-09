@@ -1,88 +1,109 @@
-# 🗳️ Live Poll Studio
+# 🗳️ Live Polling System
 
-**Live Poll Studio** is a real-time classroom polling system built with React and Socket.IO. It allows teachers to conduct live polls, and students to respond interactively in real-time, with full session-based participation and result visualization.
+**Live Polling System** is a full-stack, real-time classroom polling application. It empowers teachers to create instant polls, manage live sessions, and visualize responses as they happen, while providing students with a seamless, engaging interface to participate.
 
----
+Built with modern web technologies including React, Node.js, Socket.IO, and MongoDB.
 
-## 🔗 Live Project
+## ✨ Key Features
 
-[🔗 https://live-polling-system-ifbp.vercel.app/](https://live-polling-system-ifbp.vercel.app/)
+### 👨‍🏫 For Teachers
+- **Live Dashboard**: Create and launch questions instantly.
+- **Real-time Visualization**: Watch results update live as students vote.
+- **Session Control**: 
+  - Set custom timers for questions (e.g., 60 seconds).
+  - Control question flow (prevent answering when no active question).
+  - Manage participants (kick/remove students if needed).
+- **History**: Access past poll results and session data.
+- **Live Chat**: Direct in-app communication channel with students.
 
-
----
-##  Run Locally
-
-Follow these steps to run the project on your local machine:
-
-### 1. Clone the repository and start the app
-
-```bash
-git clone https://github.com/adarshjha7/Live-Polling-System.git
-cd Live-Polling-System
-npm install
-npm run dev
-```
----
-
-## 👨‍🏫 Teacher Features
-
-* Create and launch new polls.
-* View live poll results in real time.
-* Restrict asking a new question until:
-
-  * All students have responded, or
-  * There is no active question.
-* Set custom time limits per question (e.g., 60 seconds).
-* Remove/kick specific students during the session.
-* Access poll history (previous polls with results).
-* **Interact directly with students via an in-app chat interface**.
+### 🎓 For Students
+- **Instant Join**: No registration required—just enter a name to join via the current session.
+- **Interactive Interface**: Receive questions immediately on your device.
+- **Instant Feedback**: View global class results immediately after voting or when the timer ends.
+- **Live Chat**: Ask questions or provide feedback to the teacher in real-time.
 
 ---
 
-## 🎓 Student Features
+## 🛠️ Tech Stack
 
-* Join by entering a name (unique to the current browser tab).
-
-  * Opening a new tab allows joining again as a new student.
-  * Refreshing the tab retains the session identity.
-* Receive questions in real time and submit answers.
-* Automatically see live results after submitting or after timeout.
-* Each question must be answered within a 60-second window.
-* **Chat live with the teacher** during the session.
+- **Frontend**: React (Vite), TypeScript, Tailwind CSS, Shadcn UI
+- **Backend**: Node.js, Express
+- **Real-time**: Socket.IO
+- **Database**: MongoDB (Mongoose)
+- **State Management**: React Query, Context API
 
 ---
 
-## ✅ Summary of Implemented Features
+## 🚀 Getting Started
 
-### Core Functionality
+Follow these steps to run the project locally.
 
-* [x] Real-time poll system with socket-based syncing.
-* [x] Role-based access: Teacher & Students.
-* [x] Poll creation, answering, and result tracking.
-* [x] Hosted full-stack solution (frontend + backend).
+### Prerequisites
+- Node.js (v18+)
+- MongoDB (Running locally or using MongoDB Atlas)
 
-### Enhanced Features
+### Installation
 
-* [x] Teacher-controlled time limits per question.
-* [x] Kick out any student from the session.
-* [x] View historical poll results (persisted, not localStorage-based).
-* [x] **In-app teacher–student chat for real-time interaction**.
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd Live-Polling-System
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Environment Setup**
+   Create a `.env` file in the root directory:
+   ```env
+   # Local MongoDB
+   MONGO_URI=mongodb://localhost:27017/live-poll-system
+   
+   # Or MongoDB Atlas Connection String
+   # MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/dbname
+   ```
+
+4. **Run Locally**
+   Start both the backend server and frontend client concurrently:
+   ```bash
+   npm run dev:all
+   ```
+   - **Frontend**: http://localhost:8080 (or next available port)
+   - **Backend**: http://localhost:5000
 
 ---
 
-## 🖼️ Screenshots
+## 🌍 Deployment
+
+This project handles deployment by splitting the Backend (API) and Frontend (Client) into separate services.
+
+### Phase 1: Deploy Backend (Render)
+1. Push your code to a GitHub repository.
+2. Create a new **Web Service** on [Render](https://dashboard.render.com/).
+3. Connect your repository and use these settings:
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm run server`
+4. Add Environment Variable:
+   - `MONGO_URI`: Your MongoDB Connection String.
+5. **Copy the deployed URL** (e.g., `https://your-app.onrender.com`).
+
+### Phase 2: Deploy Frontend (Vercel)
+1. Import your repository into [Vercel](https://vercel.com/new).
+2. The default build settings (`vite build`) are correct.
+3. Add Environment Variable:
+   - `VITE_API_URL`: The Backend URL from Phase 1 (e.g., `https://your-app.onrender.com`).
+4. Click **Deploy**.
+
+---
+
+## 🖼️ Gallery
 
 ![Screenshot (72)](https://github.com/user-attachments/assets/2c2e1c74-6756-401e-a97f-561feeb86bee)
 ![Screenshot (73)](https://github.com/user-attachments/assets/d5a6c73b-4415-474e-b958-6b3a9ce1d479)
 ![Screenshot (74)](https://github.com/user-attachments/assets/0db79005-a34c-4807-9ee3-1af946135bb1)
-
-![Screenshot (75)](https://github.com/user-attachments/assets/9c0517b7-5304-4499-a729-78d433c192a1)!
-[Screenshot (76)](https://github.com/user-attachments/assets/39be0caa-c6ab-449d-a189-6e3e6613a435)
-![Screenshot (77)](https://github.com/user-attachments/assets/a0a7413f-9801-41bc-97a3-ded2d9c25544)
-![Screenshot (78)](https://github.com/user-attachments/assets/9c9ae895-8c6d-48fe-9f96-7fbf046d9f07)
 ![Screenshot (79)](https://github.com/user-attachments/assets/98e34bb0-5ea2-4612-86ed-6ac886c56421)
-
-![Screenshot (81)](https://github.com/user-attachments/assets/f6f4e450-7a6c-42ef-9e68-da7c2145d5d1)
 
 
 

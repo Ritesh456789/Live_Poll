@@ -1,13 +1,24 @@
-const express = require("express");
-const http = require("http");
-const socketIo = require("socket.io");
-const cors = require("cors");
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import connectDB from './config/db.js';
+import registerPollHandlers from './controllers/PollSocketHandler.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
+
+// Connect to Database
+connectDB();
+
+const io = new Server(server, {
   cors: {
-    origin: "http://localhost:8080",
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
@@ -15,35 +26,23 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
-let currentPoll = null;
-let responses = [];
+// Serve static files from the React frontend app
+const distPath = path.join(__dirname, '../../dist');
+app.use(express.static(distPath));
 
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
-
-  // Send current poll when someone joins
-  if (currentPoll) socket.emit("poll", currentPoll);
-
-  socket.on("create_poll", (poll) => {
-    currentPoll = poll;
-    responses = [];
-    io.emit("poll", poll);
-  });
-
-  socket.on("submit_response", (response) => {
-    responses.push(response);
-    io.emit("response_update", responses);
-  });
-
-  socket.on("end_poll", () => {
-    currentPoll = null;
-    responses = [];
-    io.emit("poll_ended");
-  });
+  registerPollHandlers(io, socket);
 
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
   });
 });
 
-server.listen(5000, () => console.log("Server running on http://localhost:5000"));
+// Anything that doesn't match the above, send back index.html
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
+});
+
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

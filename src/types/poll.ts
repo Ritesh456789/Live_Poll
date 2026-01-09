@@ -5,6 +5,7 @@ export interface Poll {
   createdAt: number;
   expiresAt: number;
   isActive: boolean;
+  votes?: any[]; // Added for incoming server data
 }
 
 export interface Answer {
